@@ -101,11 +101,45 @@ var RadialMenu = class {
         action: () => this.executeExcalidrawTool("selection")
       },
       {
-        id: "rectangle",
-        label: "Rectangle",
-        icon: "square",
-        action: () => this.executeExcalidrawTool("rectangle")
-      },
+        id: "shapes",
+        label: "Shapes",
+        icon: "shapes",
+        action: () => {
+        }
+      }
+    ];
+    let hasSelection = false;
+    const ea = window.ExcalidrawAutomate;
+    if (ea) {
+      try {
+        if (this.targetView) {
+          ea.setView(this.targetView);
+        } else {
+          ea.setView("active");
+        }
+        const selected = ea.getViewSelectedElements();
+        hasSelection = selected && selected.length > 0;
+      } catch (err) {
+        console.error("Failed to check selection", err);
+      }
+    }
+    if (hasSelection) {
+      items.push({
+        id: "copy",
+        label: "Copy",
+        icon: "copy",
+        action: () => this.executeCopy()
+      });
+    }
+    if (this.plugin.copiedElements && this.plugin.copiedElements.length > 0) {
+      items.push({
+        id: "paste",
+        label: "Paste",
+        icon: "clipboard",
+        action: () => this.executePaste()
+      });
+    }
+    items.push(
       {
         id: "undo",
         label: "Undo",
@@ -118,10 +152,15 @@ var RadialMenu = class {
         icon: "redo-2",
         action: () => this.executeExcalidrawAction("redo")
       }
-    ];
+    );
     items.forEach((item, index) => {
       const itemEl = document.createElement("div");
       itemEl.className = "excalidraw-stylus-radial-item";
+      if (item.id === "copy" || item.id === "paste") {
+        itemEl.classList.add("is-clipboard");
+      } else if (item.id === "undo" || item.id === "redo") {
+        itemEl.classList.add("is-history");
+      }
       const angle = 360 / items.length * index - 90;
       itemEl.style.setProperty("--angle", `${angle}deg`);
       (0, import_obsidian.setIcon)(itemEl, item.icon);
@@ -130,6 +169,71 @@ var RadialMenu = class {
       labelEl.innerText = item.label;
       itemEl.appendChild(labelEl);
       let labelTimeout = null;
+      let holdTimeout = null;
+      let isHolding = false;
+      let subMenuContainer = null;
+      let hoveredSubItem = null;
+      const handlePointerMove = (moveEvent) => {
+        if (!isHolding || !subMenuContainer)
+          return;
+        const elementUnderPointer = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+        const subItemEl = elementUnderPointer?.closest(".excalidraw-stylus-radial-subitem");
+        const subItems = subMenuContainer.querySelectorAll(".excalidraw-stylus-radial-subitem");
+        subItems.forEach((sub) => sub.classList.remove("is-hovered"));
+        if (subItemEl) {
+          subItemEl.classList.add("is-hovered");
+          hoveredSubItem = subItemEl;
+        } else {
+          hoveredSubItem = null;
+        }
+      };
+      const handlePointerUp = (upEvent) => {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        if (holdTimeout) {
+          clearTimeout(holdTimeout);
+          holdTimeout = null;
+        }
+        itemEl.classList.remove("is-active");
+        itemEl.classList.remove("show-label");
+        if (labelTimeout) {
+          clearTimeout(labelTimeout);
+          labelTimeout = null;
+        }
+        const rect = itemEl.getBoundingClientRect();
+        const releasedOverItem = upEvent.clientX >= rect.left && upEvent.clientX <= rect.right && upEvent.clientY >= rect.top && upEvent.clientY <= rect.bottom;
+        if (item.id === "shapes") {
+          upEvent.preventDefault();
+          upEvent.stopPropagation();
+          if (isHolding) {
+            if (hoveredSubItem) {
+              const toolId = hoveredSubItem.getAttribute("data-tool-id");
+              if (toolId) {
+                this.executeExcalidrawTool(toolId);
+              }
+            } else {
+              this.executeExcalidrawTool("rectangle");
+            }
+            if (subMenuContainer) {
+              subMenuContainer.parentNode?.removeChild(subMenuContainer);
+              subMenuContainer = null;
+            }
+            this.close();
+          } else {
+            this.executeExcalidrawTool("rectangle");
+            this.close();
+          }
+          return;
+        }
+        if (releasedOverItem) {
+          upEvent.preventDefault();
+          upEvent.stopPropagation();
+          item.action();
+          if (item.id !== "undo" && item.id !== "redo") {
+            this.close();
+          }
+        }
+      };
       itemEl.addEventListener("pointerdown", (e) => {
         itemEl.classList.add("is-active");
         if (labelTimeout)
@@ -137,25 +241,34 @@ var RadialMenu = class {
         labelTimeout = setTimeout(() => {
           itemEl.classList.add("show-label");
         }, 500);
+        if (item.id === "shapes") {
+          isHolding = false;
+          hoveredSubItem = null;
+          if (holdTimeout)
+            clearTimeout(holdTimeout);
+          holdTimeout = setTimeout(() => {
+            isHolding = true;
+            subMenuContainer = this.createSubMenu(itemEl);
+          }, 350);
+          window.addEventListener("pointermove", handlePointerMove);
+          window.addEventListener("pointerup", handlePointerUp);
+        } else {
+          window.addEventListener("pointerup", handlePointerUp);
+        }
       });
-      const clearActive = () => {
+      itemEl.addEventListener("pointercancel", (e) => {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        if (holdTimeout)
+          clearTimeout(holdTimeout);
+        if (subMenuContainer) {
+          subMenuContainer.parentNode?.removeChild(subMenuContainer);
+          subMenuContainer = null;
+        }
         itemEl.classList.remove("is-active");
         itemEl.classList.remove("show-label");
-        if (labelTimeout) {
+        if (labelTimeout)
           clearTimeout(labelTimeout);
-          labelTimeout = null;
-        }
-      };
-      itemEl.addEventListener("pointerleave", clearActive);
-      itemEl.addEventListener("pointercancel", clearActive);
-      itemEl.addEventListener("pointerup", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        clearActive();
-        item.action();
-        if (item.id !== "undo" && item.id !== "redo") {
-          this.close();
-        }
       });
       this.wrapper.appendChild(itemEl);
     });
@@ -269,13 +382,17 @@ var RadialMenu = class {
         if (api && api.history && (typeof api.history.undo === "function" || typeof api.history.redo === "function")) {
           if (action === "undo" && typeof api.history.undo === "function") {
             api.history.undo();
+            if (this.plugin.settings.enableDebug) {
+              new import_obsidian.Notice("Executed Undo directly on history API");
+            }
+            return;
           } else if (action === "redo" && typeof api.history.redo === "function") {
             api.history.redo();
+            if (this.plugin.settings.enableDebug) {
+              new import_obsidian.Notice("Executed Redo directly on history API");
+            }
+            return;
           }
-          if (this.plugin.settings.enableDebug) {
-            new import_obsidian.Notice(`Executed: ${action === "undo" ? "Undo" : "Redo"}`);
-          }
-          return;
         }
         if (api && api.actionManager && typeof api.actionManager.executeAction === "function") {
           api.actionManager.executeAction(action);
@@ -297,14 +414,155 @@ var RadialMenu = class {
             }
           }
         }
-        new import_obsidian.Notice("Error: Action manager API is not accessible.");
-      } else {
-        new import_obsidian.Notice("Error: ExcalidrawAutomate is not available on window.");
       }
+      const isRedo = action === "redo";
+      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+      const keyEvent = new KeyboardEvent("keydown", {
+        key: isRedo ? "y" : "z",
+        code: isRedo ? "KeyY" : "KeyZ",
+        ctrlKey: !isMac,
+        metaKey: isMac,
+        bubbles: true,
+        cancelable: true
+      });
+      const targetElement = document.activeElement || document.querySelector(".excalidraw-container") || document.body;
+      if (targetElement) {
+        targetElement.dispatchEvent(keyEvent);
+        if (this.plugin.settings.enableDebug) {
+          new import_obsidian.Notice(`Dispatched KeyboardEvent ${isRedo ? "Ctrl+Y" : "Ctrl+Z"}`);
+        }
+        return;
+      }
+      new import_obsidian.Notice("Error: Action manager API is not accessible.");
     } catch (err) {
       console.error(`Failed to execute Excalidraw action: ${action}`, err);
       new import_obsidian.Notice(`Failed to execute action: ${err}`);
     }
+  }
+  executeCopy() {
+    try {
+      const ea = window.ExcalidrawAutomate;
+      if (ea) {
+        if (this.targetView) {
+          ea.setView(this.targetView);
+        } else {
+          ea.setView("active");
+        }
+        const selected = ea.getViewSelectedElements();
+        if (selected && selected.length > 0) {
+          this.plugin.copiedElements = JSON.parse(JSON.stringify(selected));
+          new import_obsidian.Notice(`Copied ${selected.length} element(s)`);
+          const clipboardData = JSON.stringify({
+            type: "excalidraw/clipboard",
+            elements: selected,
+            files: {}
+          });
+          navigator.clipboard.writeText(clipboardData).catch((err) => {
+            console.warn("Could not write to system clipboard: ", err);
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to copy", err);
+      new import_obsidian.Notice(`Failed to copy: ${err}`);
+    }
+  }
+  executePaste() {
+    try {
+      const copied = this.plugin.copiedElements;
+      if (!copied || copied.length === 0)
+        return;
+      const ea = window.ExcalidrawAutomate;
+      if (!ea) {
+        new import_obsidian.Notice("ExcalidrawAutomate is not available");
+        return;
+      }
+      ea.reset();
+      if (this.targetView) {
+        ea.setView(this.targetView);
+      } else {
+        ea.setView("active");
+      }
+      const generateId = () => Math.random().toString(36).substring(2, 12);
+      const idMap = /* @__PURE__ */ new Map();
+      copied.forEach((el) => {
+        const newId = generateId();
+        idMap.set(el.id, newId);
+      });
+      const pastedElements = copied.map((el) => {
+        const cloned = JSON.parse(JSON.stringify(el));
+        cloned.id = idMap.get(el.id);
+        if (cloned.groupIds) {
+          cloned.groupIds = cloned.groupIds.map((gId) => {
+            if (!idMap.has(gId)) {
+              idMap.set(gId, generateId());
+            }
+            return idMap.get(gId);
+          });
+        }
+        if (cloned.boundElements) {
+          cloned.boundElements = cloned.boundElements.map((bound) => {
+            return {
+              ...bound,
+              id: idMap.get(bound.id) || bound.id
+            };
+          });
+        }
+        if (cloned.startBinding) {
+          cloned.startBinding.elementId = idMap.get(cloned.startBinding.elementId) || cloned.startBinding.elementId;
+        }
+        if (cloned.endBinding) {
+          cloned.endBinding.elementId = idMap.get(cloned.endBinding.elementId) || cloned.endBinding.elementId;
+        }
+        cloned.x += 20;
+        cloned.y += 20;
+        return cloned;
+      });
+      pastedElements.forEach((el) => {
+        ea.elementsDict[el.id] = el;
+      });
+      ea.addElementsToView(false, true, true);
+      new import_obsidian.Notice(`Pasted ${pastedElements.length} element(s)`);
+    } catch (err) {
+      console.error("Failed to paste", err);
+      new import_obsidian.Notice(`Failed to paste: ${err}`);
+    }
+  }
+  createSubMenu(parentEl) {
+    const subContainer = document.createElement("div");
+    subContainer.className = "excalidraw-stylus-radial-submenu-container";
+    const parentRect = parentEl.getBoundingClientRect();
+    const scrollX = window.scrollX || document.documentElement.scrollLeft;
+    const scrollY = window.scrollY || document.documentElement.scrollTop;
+    const centerX = parentRect.left + parentRect.width / 2 + scrollX;
+    const centerY = parentRect.top + parentRect.height / 2 + scrollY;
+    subContainer.style.left = `${centerX}px`;
+    subContainer.style.top = `${centerY}px`;
+    const subItems = [
+      { id: "rectangle", label: "Rectangle", icon: "square" },
+      { id: "diamond", label: "Diamond", icon: "diamond" },
+      { id: "ellipse", label: "Ellipse", icon: "circle" },
+      { id: "arrow", label: "Arrow", icon: "arrow-right" },
+      { id: "line", label: "Line", icon: "minus" }
+    ];
+    subItems.forEach((item, index) => {
+      const subEl = document.createElement("div");
+      subEl.className = "excalidraw-stylus-radial-subitem";
+      subEl.setAttribute("data-tool-id", item.id);
+      const angle = 360 / subItems.length * index - 90;
+      subEl.style.setProperty("--angle", `${angle}deg`);
+      (0, import_obsidian.setIcon)(subEl, item.icon);
+      const label = document.createElement("span");
+      label.className = "excalidraw-stylus-radial-subitem-label";
+      label.innerText = item.label;
+      subEl.appendChild(label);
+      subContainer.appendChild(subEl);
+    });
+    document.body.appendChild(subContainer);
+    requestAnimationFrame(() => {
+      subContainer.classList.add("is-open");
+    });
+    return subContainer;
   }
 };
 
@@ -318,6 +576,7 @@ var ExcalidrawStylusRadialPlugin = class extends import_obsidian2.Plugin {
     this.settings = DEFAULT_SETTINGS;
     this.activeMenu = null;
     this.lastPenButtonDownTime = 0;
+    this.copiedElements = [];
     this.handlePointerDown = (e) => {
       if (this.settings.enableDebug && e.pointerType === "pen") {
         new import_obsidian2.Notice(`DOWN: btn=${e.button} btns=${e.buttons} pres=${e.pressure}`);
@@ -379,6 +638,29 @@ var ExcalidrawStylusRadialPlugin = class extends import_obsidian2.Plugin {
         }
       }
     };
+    this.handleCopy = (e) => {
+      const target = e.target;
+      const isInsideExcalidraw = !!target.closest(
+        '.excalidraw-container, .workspace-leaf-content[data-type="excalidraw"]'
+      );
+      if (!isInsideExcalidraw)
+        return;
+      setTimeout(() => {
+        try {
+          const ea = window.ExcalidrawAutomate;
+          if (ea) {
+            ea.reset();
+            ea.setView("active");
+            const selected = ea.getViewSelectedElements();
+            if (selected && selected.length > 0) {
+              this.copiedElements = JSON.parse(JSON.stringify(selected));
+            }
+          }
+        } catch (err) {
+          console.error("Failed to cache copied elements", err);
+        }
+      }, 100);
+    };
   }
   async onload() {
     console.log("Loading Excalidraw Stylus Radial Plugin");
@@ -400,6 +682,12 @@ var ExcalidrawStylusRadialPlugin = class extends import_obsidian2.Plugin {
       document,
       "contextmenu",
       this.handleContextMenu,
+      { capture: true }
+    );
+    this.registerDomEvent(
+      document,
+      "copy",
+      this.handleCopy,
       { capture: true }
     );
   }

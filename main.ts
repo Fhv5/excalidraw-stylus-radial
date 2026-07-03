@@ -13,6 +13,7 @@ export default class ExcalidrawStylusRadialPlugin extends Plugin {
   public settings: ExcalidrawStylusRadialSettings = DEFAULT_SETTINGS;
   private activeMenu: RadialMenu | null = null;
   private lastPenButtonDownTime = 0;
+  public copiedElements: any[] = [];
 
   async onload() {
     console.log("Loading Excalidraw Stylus Radial Plugin");
@@ -40,6 +41,13 @@ export default class ExcalidrawStylusRadialPlugin extends Plugin {
       document,
       "contextmenu",
       this.handleContextMenu,
+      { capture: true }
+    );
+
+    this.registerDomEvent(
+      document,
+      "copy",
+      this.handleCopy,
       { capture: true }
     );
   }
@@ -156,6 +164,32 @@ export default class ExcalidrawStylusRadialPlugin extends Plugin {
       this.activeMenu = null;
     }
   }
+
+  private handleCopy = (e: ClipboardEvent) => {
+    const target = e.target as HTMLElement;
+    const isInsideExcalidraw = !!target.closest(
+      ".excalidraw-container, .workspace-leaf-content[data-type=\"excalidraw\"]"
+    );
+
+    if (!isInsideExcalidraw) return;
+
+    // Cache the copied elements after a short delay so Excalidraw can update its selection state first
+    setTimeout(() => {
+      try {
+        const ea = (window as any).ExcalidrawAutomate;
+        if (ea) {
+          ea.reset();
+          ea.setView("active");
+          const selected = ea.getViewSelectedElements();
+          if (selected && selected.length > 0) {
+            this.copiedElements = JSON.parse(JSON.stringify(selected));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to cache copied elements", err);
+      }
+    }, 100);
+  };
 }
 
 class ExcalidrawStylusRadialSettingTab extends PluginSettingTab {

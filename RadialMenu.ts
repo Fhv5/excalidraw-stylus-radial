@@ -69,7 +69,7 @@ export class RadialMenu {
     ring.className = "excalidraw-stylus-radial-ring";
     this.wrapper.appendChild(ring);
 
-    // Definition of the 7 radial buttons
+    // Definition of the radial buttons
     const items: RadialMenuItem[] = [
       {
         id: "freedraw",
@@ -96,11 +96,49 @@ export class RadialMenu {
         action: () => this.executeExcalidrawTool("selection"),
       },
       {
-        id: "rectangle",
-        label: "Rectangle",
-        icon: "square",
-        action: () => this.executeExcalidrawTool("rectangle"),
+        id: "shapes",
+        label: "Shapes",
+        icon: "shapes",
+        action: () => { },
       },
+    ];
+
+    // Check selection using ExcalidrawAutomate
+    let hasSelection = false;
+    const ea = (window as any).ExcalidrawAutomate;
+    if (ea) {
+      try {
+        if (this.targetView) {
+          ea.setView(this.targetView);
+        } else {
+          ea.setView("active");
+        }
+        const selected = ea.getViewSelectedElements();
+        hasSelection = selected && selected.length > 0;
+      } catch (err) {
+        console.error("Failed to check selection", err);
+      }
+    }
+
+    if (hasSelection) {
+      items.push({
+        id: "copy",
+        label: "Copy",
+        icon: "copy",
+        action: () => this.executeCopy(),
+      });
+    }
+
+    if (this.plugin.copiedElements && this.plugin.copiedElements.length > 0) {
+      items.push({
+        id: "paste",
+        label: "Paste",
+        icon: "clipboard",
+        action: () => this.executePaste(),
+      });
+    }
+
+    items.push(
       {
         id: "undo",
         label: "Undo",
@@ -112,18 +150,25 @@ export class RadialMenu {
         label: "Redo",
         icon: "redo-2",
         action: () => this.executeExcalidrawAction("redo"),
-      },
-    ];
+      }
+    );
 
     items.forEach((item, index) => {
       const itemEl = document.createElement("div");
       itemEl.className = "excalidraw-stylus-radial-item";
-      
+
+      // Add visual distinction classes
+      if (item.id === "copy" || item.id === "paste") {
+        itemEl.classList.add("is-clipboard");
+      } else if (item.id === "undo" || item.id === "redo") {
+        itemEl.classList.add("is-history");
+      }
+
       // Distribute items evenly around 360 degrees.
       // -90deg offset starts distribution at the very top (12 o'clock).
       const angle = (360 / items.length) * index - 90;
       itemEl.style.setProperty("--angle", `${angle}deg`);
-      
+
       // Inject icon using Obsidian standard API helper
       setIcon(itemEl, item.icon);
 
@@ -135,18 +180,6 @@ export class RadialMenu {
 
       let labelTimeout: any = null;
 
-      // Visual feedback states
-      itemEl.addEventListener("pointerdown", (e) => {
-        // Instant visual feedback (coloring the button)
-        itemEl.classList.add("is-active");
-
-        // Start timer to show the label only on long press (e.g., 500ms)
-        if (labelTimeout) clearTimeout(labelTimeout);
-        labelTimeout = setTimeout(() => {
-          itemEl.classList.add("show-label");
-        }, 500);
-      });
-
       const clearActive = () => {
         itemEl.classList.remove("is-active");
         itemEl.classList.remove("show-label");
@@ -156,19 +189,117 @@ export class RadialMenu {
         }
       };
 
-      itemEl.addEventListener("pointerleave", clearActive);
-      itemEl.addEventListener("pointercancel", clearActive);
+      if (item.id === "shapes") {
+        let holdTimeout: any = null;
+        let isHolding = false;
+        let subMenuContainer: HTMLDivElement | null = null;
+        let hoveredSubItem: HTMLDivElement | null = null;
 
-      // Trigger selection on pointerup
-      itemEl.addEventListener("pointerup", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        clearActive();
-        item.action();
-        if (item.id !== "undo" && item.id !== "redo") {
-          this.close();
-        }
-      });
+        const handlePointerMove = (moveEvent: PointerEvent) => {
+          if (!isHolding || !subMenuContainer) return;
+          const elementUnderPointer = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY) as HTMLElement;
+          const subItemEl = elementUnderPointer?.closest(".excalidraw-stylus-radial-subitem") as HTMLDivElement;
+
+          const subItems = subMenuContainer.querySelectorAll(".excalidraw-stylus-radial-subitem");
+          subItems.forEach((sub) => sub.classList.remove("is-hovered"));
+
+          if (subItemEl) {
+            subItemEl.classList.add("is-hovered");
+            hoveredSubItem = subItemEl;
+          } else {
+            hoveredSubItem = null;
+          }
+        };
+
+        const handlePointerUp = (upEvent: PointerEvent) => {
+          window.removeEventListener("pointermove", handlePointerMove);
+          window.removeEventListener("pointerup", handlePointerUp);
+
+          if (holdTimeout) {
+            clearTimeout(holdTimeout);
+            holdTimeout = null;
+          }
+
+          clearActive();
+
+          upEvent.preventDefault();
+          upEvent.stopPropagation();
+
+          if (isHolding) {
+            if (hoveredSubItem) {
+              const toolId = hoveredSubItem.getAttribute("data-tool-id");
+              if (toolId) {
+                this.executeExcalidrawTool(toolId);
+              }
+            } else {
+              this.executeExcalidrawTool("rectangle");
+            }
+            if (subMenuContainer) {
+              subMenuContainer.parentNode?.removeChild(subMenuContainer);
+              subMenuContainer = null;
+            }
+            this.close();
+          } else {
+            // Quick tap: switch to rectangle
+            this.executeExcalidrawTool("rectangle");
+            this.close();
+          }
+        };
+
+        itemEl.addEventListener("pointerdown", (e) => {
+          itemEl.classList.add("is-active");
+
+          if (labelTimeout) clearTimeout(labelTimeout);
+          labelTimeout = setTimeout(() => {
+            itemEl.classList.add("show-label");
+          }, 500);
+
+          isHolding = false;
+          hoveredSubItem = null;
+          if (holdTimeout) clearTimeout(holdTimeout);
+          holdTimeout = setTimeout(() => {
+            isHolding = true;
+            subMenuContainer = this.createSubMenu(itemEl);
+          }, 350);
+
+          window.addEventListener("pointermove", handlePointerMove);
+          window.addEventListener("pointerup", handlePointerUp);
+        });
+
+        itemEl.addEventListener("pointercancel", (e) => {
+          window.removeEventListener("pointermove", handlePointerMove);
+          window.removeEventListener("pointerup", handlePointerUp);
+          if (holdTimeout) clearTimeout(holdTimeout);
+          if (subMenuContainer) {
+            subMenuContainer.parentNode?.removeChild(subMenuContainer);
+            subMenuContainer = null;
+          }
+          clearActive();
+        });
+      } else {
+        // Standard item handling using standard events (as it used to be)
+        itemEl.addEventListener("pointerdown", (e) => {
+          itemEl.classList.add("is-active");
+
+          if (labelTimeout) clearTimeout(labelTimeout);
+          labelTimeout = setTimeout(() => {
+            itemEl.classList.add("show-label");
+          }, 500);
+        });
+
+        itemEl.addEventListener("pointerleave", clearActive);
+        itemEl.addEventListener("pointercancel", clearActive);
+
+        itemEl.addEventListener("pointerup", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          clearActive();
+          item.action();
+          if (item.id !== "undo" && item.id !== "redo") {
+            this.close();
+          }
+        });
+      }
 
       this.wrapper!.appendChild(itemEl);
     });
@@ -194,13 +325,13 @@ export class RadialMenu {
 
     if (this.wrapper) {
       this.wrapper.classList.remove("is-open");
-      
+
       const onTransitionEnd = () => {
         this.destroy();
       };
-      
+
       this.wrapper.addEventListener("transitionend", onTransitionEnd, { once: true });
-      
+
       // Fallback in case transitionend does not fire
       setTimeout(() => {
         if (this.isOpen === false && this.container) {
@@ -262,7 +393,7 @@ export class RadialMenu {
         } else {
           ea.setView("active");
         }
-        
+
         // Attempt to get the actual Excalidraw API via the resolved targetView first
         const api = this.targetView?.excalidrawAPI || this.targetView?.excalidrawRef?.current || ea.getExcalidrawAPI();
 
@@ -273,7 +404,7 @@ export class RadialMenu {
           }
           return;
         }
-        
+
         // Direct fallback (e.g. older versions or mock scripts)
         if (typeof ea.setActiveTool === "function") {
           ea.setActiveTool(tool);
@@ -282,7 +413,7 @@ export class RadialMenu {
           }
           return;
         }
-        
+
         new Notice("Error: setActiveTool function not found.");
       } else {
         new Notice("Error: ExcalidrawAutomate is not available on window.");
@@ -306,7 +437,7 @@ export class RadialMenu {
 
         // Attempt to get the actual Excalidraw API via the resolved targetView first
         const api = this.targetView?.excalidrawAPI || this.targetView?.excalidrawRef?.current || ea.getExcalidrawAPI();
-        
+
         // 1. Try history undo/redo directly on the native API (available in Excalidraw v0.15+)
         if (api && api.history && (typeof api.history.undo === "function" || typeof api.history.redo === "function")) {
           if (action === "undo" && typeof api.history.undo === "function") {
@@ -352,5 +483,159 @@ export class RadialMenu {
       console.error(`Failed to execute Excalidraw action: ${action}`, err);
       new Notice(`Failed to execute action: ${err}`);
     }
+  }
+
+  private executeCopy() {
+    try {
+      const ea = (window as any).ExcalidrawAutomate;
+      if (ea) {
+        if (this.targetView) {
+          ea.setView(this.targetView);
+        } else {
+          ea.setView("active");
+        }
+        const selected = ea.getViewSelectedElements();
+        if (selected && selected.length > 0) {
+          this.plugin.copiedElements = JSON.parse(JSON.stringify(selected));
+          new Notice(`Copied ${selected.length} element(s)`);
+
+          // Write to system clipboard in Excalidraw format
+          const clipboardData = JSON.stringify({
+            type: "excalidraw/clipboard",
+            elements: selected,
+            files: {}
+          });
+          navigator.clipboard.writeText(clipboardData).catch((err) => {
+            console.warn("Could not write to system clipboard: ", err);
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to copy", err);
+      new Notice(`Failed to copy: ${err}`);
+    }
+  }
+
+  private executePaste() {
+    try {
+      const copied = this.plugin.copiedElements;
+      if (!copied || copied.length === 0) return;
+
+      const ea = (window as any).ExcalidrawAutomate;
+      if (!ea) {
+        new Notice("ExcalidrawAutomate is not available");
+        return;
+      }
+
+      ea.reset();
+      if (this.targetView) {
+        ea.setView(this.targetView);
+      } else {
+        ea.setView("active");
+      }
+
+      const generateId = () => Math.random().toString(36).substring(2, 12);
+
+      const idMap = new Map<string, string>();
+      copied.forEach((el: any) => {
+        const newId = generateId();
+        idMap.set(el.id, newId);
+      });
+
+      const pastedElements = copied.map((el: any) => {
+        const cloned = JSON.parse(JSON.stringify(el));
+        cloned.id = idMap.get(el.id);
+
+        if (cloned.groupIds) {
+          cloned.groupIds = cloned.groupIds.map((gId: string) => {
+            if (!idMap.has(gId)) {
+              idMap.set(gId, generateId());
+            }
+            return idMap.get(gId);
+          });
+        }
+
+        if (cloned.boundElements) {
+          cloned.boundElements = cloned.boundElements.map((bound: any) => {
+            return {
+              ...bound,
+              id: idMap.get(bound.id) || bound.id
+            };
+          });
+        }
+
+        if (cloned.startBinding) {
+          cloned.startBinding.elementId = idMap.get(cloned.startBinding.elementId) || cloned.startBinding.elementId;
+        }
+        if (cloned.endBinding) {
+          cloned.endBinding.elementId = idMap.get(cloned.endBinding.elementId) || cloned.endBinding.elementId;
+        }
+
+        // Offset the pasted elements slightly so they don't cover the original elements exactly
+        cloned.x += 20;
+        cloned.y += 20;
+
+        return cloned;
+      });
+
+      pastedElements.forEach((el: any) => {
+        ea.elementsDict[el.id] = el;
+      });
+
+      ea.addElementsToView(false, true, true);
+      new Notice(`Pasted ${pastedElements.length} element(s)`);
+    } catch (err) {
+      console.error("Failed to paste", err);
+      new Notice(`Failed to paste: ${err}`);
+    }
+  }
+
+  private createSubMenu(parentEl: HTMLElement): HTMLDivElement {
+    const subContainer = document.createElement("div");
+    subContainer.className = "excalidraw-stylus-radial-submenu-container";
+
+    // We position it absolute relative to document.body, centered on the parent shapes button
+    const parentRect = parentEl.getBoundingClientRect();
+    const scrollX = window.scrollX || document.documentElement.scrollLeft;
+    const scrollY = window.scrollY || document.documentElement.scrollTop;
+    const centerX = parentRect.left + parentRect.width / 2 + scrollX;
+    const centerY = parentRect.top + parentRect.height / 2 + scrollY;
+
+    subContainer.style.left = `${centerX}px`;
+    subContainer.style.top = `${centerY}px`;
+
+    const subItems = [
+      { id: "rectangle", label: "Rectangle", icon: "square" },
+      { id: "diamond", label: "Diamond", icon: "diamond" },
+      { id: "ellipse", label: "Ellipse", icon: "circle" },
+      { id: "arrow", label: "Arrow", icon: "arrow-right" },
+      { id: "line", label: "Line", icon: "minus" }
+    ];
+
+    subItems.forEach((item, index) => {
+      const subEl = document.createElement("div");
+      subEl.className = "excalidraw-stylus-radial-subitem";
+      subEl.setAttribute("data-tool-id", item.id);
+
+      const angle = (360 / subItems.length) * index - 90;
+      subEl.style.setProperty("--angle", `${angle}deg`);
+
+      setIcon(subEl, item.icon);
+
+      const label = document.createElement("span");
+      label.className = "excalidraw-stylus-radial-subitem-label";
+      label.innerText = item.label;
+      subEl.appendChild(label);
+
+      subContainer.appendChild(subEl);
+    });
+
+    document.body.appendChild(subContainer);
+
+    requestAnimationFrame(() => {
+      subContainer.classList.add("is-open");
+    });
+
+    return subContainer;
   }
 }

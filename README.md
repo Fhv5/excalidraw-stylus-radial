@@ -5,8 +5,10 @@ A vibe coded Obsidian plugin I made for my personal use. It provides a floating 
 ## Features
 
 - Floating Radial Menu: Triggers exactly where you press the stylus button (on tap).
-- Tool Switching: Fast switching to Pen, Eraser, Move/Pan, Select, and Rectangle.
+- Tool & Shapes Selector: Fast switching to Pen, Eraser, Move/Pan, and Select. The "Shapes" button switches to the default Rectangle tool on click, or opens an adjacent sub-menu of shapes (Rectangle, Diamond, Ellipse, Arrow, Line) on long press, allowing you to drag your stylus to select a figure.
+- Visual Distinction: Tools, clipboard actions (styled in blue), and history actions (smaller and muted) have clear visual distinctions to prevent confusion.
 - History Actions: Execute Undo and Redo operations directly from the menu.
+- Dynamic Copy and Paste: When elements are selected, a "Copy" button appears on the radial menu. When elements are copied (either via the menu or normal Ctrl+C), a "Paste" button appears to duplicate the elements with offset coordinates and preserved groupings/bindings.
 
 ## Installation
 
