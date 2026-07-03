@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-excalidraw-stylus-radial",
+  "name": "Excalidraw Stylus Radial",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Floating radial menu for Excalidraw canvases triggered by S Pen stylus side buttons.",
+  "author": "Fhv7",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}

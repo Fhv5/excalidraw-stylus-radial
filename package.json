@@ -1,0 +1,26 @@
+{
+  "name": "obsidian-excalidraw-stylus-radial",
+  "version": "1.0.0",
+  "description": "Floating radial menu for Excalidraw canvas, optimized for S Pen and EMR stylus buttons.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit && node esbuild.config.mjs production"
+  },
+  "keywords": [
+    "obsidian",
+    "excalidraw",
+    "radial-menu",
+    "s-pen",
+    "stylus"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.20.0",
+    "obsidian": "^1.7.2",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3"
+  }
+}
