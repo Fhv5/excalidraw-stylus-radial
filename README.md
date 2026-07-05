@@ -2,9 +2,9 @@
 
 A vibe coded Obsidian plugin I made for my personal use. It provides a floating radial menu for Excalidraw drawings, designed specifically for EMR stylus buttons (such as the Samsung S Pen side button).
 
-
-https://github.com/user-attachments/assets/0e17d084-4fed-4b5e-9ad6-4f343a7eb59a
-
+<p align="center">
+<img width="480" alt="obsidian" src="https://github.com/user-attachments/assets/58fc3e7b-6225-4069-8a79-3af291303b4f" />
+</p>
 
 ## Features
 
@@ -13,8 +13,6 @@ https://github.com/user-attachments/assets/0e17d084-4fed-4b5e-9ad6-4f343a7eb59a
 - Visual Distinction: Tools, clipboard actions (styled in blue), and history actions (smaller and muted) have clear visual distinctions to prevent confusion.
 - History Actions: Execute Undo and Redo operations directly from the menu.
 - Dynamic Copy and Paste: When elements are selected, a "Copy" button appears on the radial menu. When elements are copied (either via the menu or normal Ctrl+C), a "Paste" button appears to duplicate the elements with offset coordinates and preserved groupings/bindings.
-
-<img width="756" height="460" alt="obsidian" src="https://github.com/user-attachments/assets/58fc3e7b-6225-4069-8a79-3af291303b4f" />
 
 ## Installation
 
