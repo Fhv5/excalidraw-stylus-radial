@@ -2,6 +2,10 @@
 
 A vibe coded Obsidian plugin I made for my personal use. It provides a floating radial menu for Excalidraw drawings, designed specifically for EMR stylus buttons (such as the Samsung S Pen side button).
 
+
+https://github.com/user-attachments/assets/0e17d084-4fed-4b5e-9ad6-4f343a7eb59a
+
+
 ## Features
 
 - Floating Radial Menu: Triggers exactly where you press the stylus button (on tap).
